@@ -1,13 +1,19 @@
 /**
  * Home Dashboard Screen
  */
-import React, { useContext } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useContext, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput, Alert, Linking } from 'react-native';
+import LocationSelectorModal from '../../src/components/LocationSelectorModal';
+import { APP_CONFIG } from '../../src/constants/config';
 import { useRouter } from 'expo-router';
 import { ThemeContext } from '../_layout';
 import { useLocationStore } from '../../src/store/locationStore';
 import { useOfflineStore } from '../../src/store/offlineStore';
 import { useUserStore } from '../../src/store/userStore';
+import { useSettingsStore } from '../../src/store/settingsStore';
+import i18n, { t } from '../../src/localization/i18n';
+import { checkPendingChallans, Challan } from '../../src/services/challanService';
+import { formatINR } from '../../src/utils/formatCurrency';
 import { getGreeting, timeAgo } from '../../src/utils/formatDate';
 import { spacing, borderRadius } from '../../src/constants/theme';
 
@@ -32,8 +38,38 @@ export default function HomeScreen() {
   const { currentLocation } = useLocationStore();
   const { isOnline, lastSyncAt } = useOfflineStore();
   const { profile } = useUserStore();
+  const { settings } = useSettingsStore();
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+
+  // Sync translation locale
+  i18n.locale = settings.language;
+
+  // E-Challan Checking States
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [challans, setChallans] = useState<Challan[]>([]);
+  const [challanLoading, setChallanLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const countryName = APP_CONFIG.countries.find(c => c.code === currentLocation.country)?.name || currentLocation.country;
 
   const factIndex = new Date().getDate() % DYK_FACTS.length;
+
+  async function handleCheckChallans() {
+    if (!vehicleNumber.trim()) {
+      Alert.alert('Vehicle Number Required', 'Please enter your vehicle number.');
+      return;
+    }
+    setChallanLoading(true);
+    try {
+      const results = await checkPendingChallans(vehicleNumber);
+      setChallans(results);
+      setSearched(true);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to fetch challan details. Please try again.');
+    } finally {
+      setChallanLoading(false);
+    }
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -42,12 +78,12 @@ export default function HomeScreen() {
         <View style={styles.heroTop}>
           <View>
             <Text style={styles.greeting}>{getGreeting()}, {profile.name} 👋</Text>
-            <Text style={styles.heroTitle}>What do you need to know?</Text>
+            <Text style={styles.heroTitle}>{t('home.greeting')}</Text>
           </View>
           <View style={[styles.statusTag, { backgroundColor: isOnline ? 'rgba(0,200,83,0.2)' : 'rgba(255,152,0,0.2)' }]}>
             <View style={[styles.statusDot, { backgroundColor: isOnline ? '#00C853' : '#FF9800' }]} />
             <Text style={[styles.statusText, { color: isOnline ? '#B9F6CA' : '#FFE0B2' }]}>
-              {isOnline ? 'Online' : 'Offline'}
+              {isOnline ? t('common.online') : t('common.offline')}
             </Text>
           </View>
         </View>
@@ -55,13 +91,13 @@ export default function HomeScreen() {
         {/* Location Banner */}
         <TouchableOpacity
           style={styles.locationPill}
-          onPress={() => {/* TODO: open location modal */}}
+          onPress={() => setLocationModalVisible(true)}
           accessibilityRole="button"
           accessibilityLabel="Change location"
         >
           <Text style={styles.locationIcon}>📍</Text>
           <Text style={styles.locationText}>
-            {currentLocation.city}, {currentLocation.stateName}, India · Change
+            {currentLocation.city ? `${currentLocation.city}, ` : ''}{currentLocation.stateName ? `${currentLocation.stateName}, ` : ''}{countryName} · Change Location
           </Text>
         </TouchableOpacity>
 
@@ -73,7 +109,7 @@ export default function HomeScreen() {
           accessibilityLabel="Search laws, violations, fines"
         >
           <Text style={styles.searchIcon}>🔍</Text>
-          <Text style={styles.searchPlaceholder}>Search laws, violations, fines...</Text>
+          <Text style={styles.searchPlaceholder}>{t('home.searchPlaceholder')}</Text>
         </TouchableOpacity>
 
         {/* Sync Status */}
@@ -88,41 +124,112 @@ export default function HomeScreen() {
           <QuickCard
             icon="💬"
             iconBg={colors.primaryLight}
-            title="Chat with AI"
-            desc="Ask any traffic law question"
+            title={t('home.chatWithAI')}
+            desc={t('home.chatDesc')}
             onPress={() => router.push('/(tabs)/chat')}
             colors={colors}
           />
           <QuickCard
             icon="🧮"
             iconBg={colors.accentLight}
-            title="Fine Calculator"
-            desc="Estimate challan amount"
+            title={t('home.fineCalculator')}
+            desc={t('home.calcDesc')}
             onPress={() => router.push('/(tabs)/calculator')}
             colors={colors}
           />
           <QuickCard
             icon="📚"
             iconBg={colors.warningLight}
-            title="Browse Laws"
-            desc="Explore full library"
+            title={t('home.browseLaws')}
+            desc={t('home.lawsDesc')}
             onPress={() => router.push('/(tabs)/laws')}
             colors={colors}
           />
           <QuickCard
             icon="🚨"
             iconBg={colors.dangerLight}
-            title="SOS / Emergency"
-            desc="Quick access helplines"
+            title={t('home.emergency')}
+            desc={t('home.emergencyDesc')}
             onPress={() => router.push('/emergency')}
             colors={colors}
           />
         </View>
 
+        {/* E-Challan check section */}
+        <Text style={[styles.sectionHead, { color: colors.text }]}>🔍 Real-time E-Challan Checker</Text>
+        <View style={[styles.challanCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.challanTitle, { color: colors.text }]}>Check Pending Fines & Violations</Text>
+          <Text style={[styles.challanDescText, { color: colors.textSecondary }]}>
+            Enter your vehicle registration number to query the official Parivahan/State database (e.g. TN01AB1234).
+          </Text>
+          
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={[styles.challanInput, { borderColor: colors.borderStrong, backgroundColor: colors.inputBackground, color: colors.text }]}
+              placeholder="e.g. TN01AB1234"
+              placeholderTextColor={colors.textTertiary}
+              value={vehicleNumber}
+              onChangeText={setVehicleNumber}
+              autoCapitalize="characters"
+              accessibilityRole="text"
+              accessibilityLabel="Enter Vehicle Number"
+            />
+            <TouchableOpacity
+              style={[styles.challanBtn, { backgroundColor: colors.primary }]}
+              onPress={handleCheckChallans}
+              disabled={challanLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Search challan details"
+            >
+              <Text style={styles.challanBtnText}>
+                {challanLoading ? t('common.loading') : t('common.search')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {searched && (
+            <View style={styles.resultsContainer}>
+              {challanLoading ? (
+                <Text style={[styles.statusInfoText, { color: colors.textSecondary }]}>Querying database...</Text>
+              ) : challans.length === 0 ? (
+                <View style={styles.noChallansBox}>
+                  <Text style={styles.successEmoji}>✅</Text>
+                  <Text style={[styles.successText, { color: colors.text }]}>No pending challans found for "{vehicleNumber.toUpperCase()}"</Text>
+                  <Text style={[styles.successDesc, { color: colors.textSecondary }]}>Great job driving safely!</Text>
+                </View>
+              ) : (
+                <View style={styles.challanList}>
+                  <Text style={[styles.listHeader, { color: colors.text }]}>Pending Challans ({challans.length})</Text>
+                  {challans.map((ch) => (
+                    <View key={ch.id} style={[styles.challanItemBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                      <View style={styles.itemHeader}>
+                        <Text style={[styles.challanNum, { color: colors.text }]}>{ch.challanNumber}</Text>
+                        <Text style={[styles.challanAmt, { color: colors.danger }]}>{formatINR(ch.amount)}</Text>
+                      </View>
+                      <Text style={[styles.challanViolation, { color: colors.text }]}>{ch.violationName}</Text>
+                      <Text style={[styles.challanDetailText, { color: colors.textSecondary }]}>📍 {ch.location}</Text>
+                      <Text style={[styles.challanDetailText, { color: colors.textSecondary }]}>📜 Section: {ch.section} ({ch.act})</Text>
+                      <Text style={[styles.challanDetailText, { color: colors.textSecondary }]}>⏰ Deadline: {new Date(ch.deadlineAt).toLocaleDateString()}</Text>
+                      <TouchableOpacity 
+                        style={[styles.payBtnInline, { backgroundColor: colors.primaryLight }]}
+                        onPress={() => Linking.openURL(APP_CONFIG.paymentPortals[currentLocation.stateCode] || APP_CONFIG.paymentPortals.national)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Pay fine online"
+                      >
+                        <Text style={[styles.payBtnInlineText, { color: colors.primary }]}>{t('calculator.payOnline')} 🔗</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
         {/* Did You Know */}
-        <Text style={[styles.sectionHead, { color: colors.text }]}>Today's Fact</Text>
+        <Text style={[styles.sectionHead, { color: colors.text }]}>{t('home.todaysFact')}</Text>
         <View style={[styles.dykCard]}>
-          <Text style={styles.dykLabel}>💡 Did You Know?</Text>
+          <Text style={styles.dykLabel}>{t('home.didYouKnow')}</Text>
           <Text style={styles.dykText}>{DYK_FACTS[factIndex]}</Text>
           <View style={styles.dykLocation}>
             <Text style={styles.dykLocationText}>📍 {currentLocation.city}, {currentLocation.stateName}</Text>
@@ -130,12 +237,12 @@ export default function HomeScreen() {
         </View>
 
         {/* Common Violations Ticker */}
-        <Text style={[styles.sectionHead, { color: colors.text }]}>Common Violations in Your Area</Text>
+        <Text style={[styles.sectionHead, { color: colors.text }]}>{t('home.commonViolations')}</Text>
         <View style={[styles.tickerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.tickerHead, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.tickerHeadText, { color: colors.text }]}>Recent fines issued nearby</Text>
+            <Text style={[styles.tickerHeadText, { color: colors.text }]}>{t('home.recentFines')}</Text>
             <View style={[styles.liveBadge, { backgroundColor: colors.accentLight }]}>
-              <Text style={[styles.liveText, { color: '#007b4d' }]}>Live</Text>
+              <Text style={[styles.liveText, { color: '#007b4d' }]}>{t('home.live')}</Text>
             </View>
           </View>
           {TICKER_VIOLATIONS.map((v, i) => (
@@ -147,16 +254,16 @@ export default function HomeScreen() {
         </View>
 
         {/* Safety Score */}
-        <Text style={[styles.sectionHead, { color: colors.text }]}>Your Safety Score</Text>
+        <Text style={[styles.sectionHead, { color: colors.text }]}>{t('home.safetyScore')}</Text>
         <View style={[styles.safetyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.scoreCircle, { borderColor: colors.accent }]}>
             <Text style={[styles.scoreNumber, { color: colors.text }]}>{profile.safetyScore}</Text>
           </View>
           <View style={styles.scoreInfo}>
             <Text style={[styles.scoreTitle, { color: colors.text }]}>
-              {profile.safetyScore >= 80 ? 'Excellent Driver' : profile.safetyScore >= 60 ? 'Good Driver' : 'Keep Learning'}
+              {profile.safetyScore >= 80 ? 'Excellent Driver' : profile.safetyScore >= 60 ? t('home.goodDriver') : 'Keep Learning'}
             </Text>
-            <Text style={[styles.scoreDesc, { color: colors.textSecondary }]}>Complete a quiz to improve your score</Text>
+            <Text style={[styles.scoreDesc, { color: colors.textSecondary }]}>{t('home.improveScore')}</Text>
           </View>
           <View style={[styles.scoreBadge, { backgroundColor: colors.accentLight }]}>
             <Text style={[styles.scoreBadgeText, { color: '#007b4d' }]}>{profile.safetyScore} / 100</Text>
@@ -167,14 +274,21 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={[styles.notifBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => router.push('/notifications')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Notifications panel"
         >
           <Text style={{ fontSize: 18 }}>🔔</Text>
-          <Text style={[styles.notifText, { color: colors.text }]}>View Notifications</Text>
+          <Text style={[styles.notifText, { color: colors.text }]}>{t('notifications.title')}</Text>
           <Text style={{ color: colors.textTertiary }}>→</Text>
         </TouchableOpacity>
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      <LocationSelectorModal
+        visible={locationModalVisible}
+        onClose={() => setLocationModalVisible(false)}
+      />
     </View>
   );
 }
@@ -246,4 +360,27 @@ const styles = StyleSheet.create({
   scoreBadgeText: { fontSize: 12, fontWeight: '600' },
   notifBtn: { marginHorizontal: 16, marginTop: 16, borderWidth: 1, borderRadius: 14, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   notifText: { flex: 1, fontSize: 15, fontWeight: '500' },
+  challanCard: { marginHorizontal: 16, borderWidth: 1, borderRadius: 14, padding: 16, gap: 10, marginTop: 8 },
+  challanTitle: { fontSize: 15, fontWeight: '600' },
+  challanDescText: { fontSize: 13, lineHeight: 18 },
+  inputContainer: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  challanInput: { flex: 1, borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 15 },
+  challanBtn: { borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
+  challanBtnText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
+  resultsContainer: { marginTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)', paddingTop: 12 },
+  statusInfoText: { fontSize: 13, fontStyle: 'italic', textAlign: 'center' },
+  noChallansBox: { alignItems: 'center', paddingVertical: 12, gap: 4 },
+  successEmoji: { fontSize: 24, marginBottom: 4 },
+  successText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  successDesc: { fontSize: 12, textAlign: 'center' },
+  challanList: { gap: 10 },
+  listHeader: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
+  challanItemBox: { borderWidth: 1, borderRadius: 10, padding: 12, gap: 6, borderStyle: 'solid' },
+  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  challanNum: { fontSize: 13, fontWeight: '600' },
+  challanAmt: { fontSize: 15, fontWeight: '700' },
+  challanViolation: { fontSize: 14, fontWeight: '500' },
+  challanDetailText: { fontSize: 12 },
+  payBtnInline: { borderRadius: 6, paddingVertical: 8, alignItems: 'center', marginTop: 6 },
+  payBtnInlineText: { fontSize: 12, fontWeight: '600' },
 });

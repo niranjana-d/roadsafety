@@ -13,11 +13,16 @@ interface UserState {
   removeVehicle: (id: string) => void;
   updateVehicle: (id: string, partial: Partial<SavedVehicle>) => void;
   updateSafetyScore: (score: number) => void;
+  login: (name: string, email: string, phone: string) => void;
+  logout: () => void;
 }
 
 const defaultProfile: UserProfile = {
-  id: 'user-1',
+  id: '',
   name: 'Driver',
+  email: '',
+  phone: '',
+  isLoggedIn: false,
   location: { country: 'IN', stateCode: 'MH', city: 'Mumbai' },
   language: 'en',
   vehicles: [
@@ -62,6 +67,30 @@ export const useUserStore = create<UserState>()(
 
       updateSafetyScore: (score) => set((state) => ({
         profile: { ...state.profile, safetyScore: Math.min(100, Math.max(0, score)) },
+      })),
+
+      login: (name, email, phone) => set((state) => ({
+        profile: {
+          ...state.profile,
+          id: `user-${Date.now()}`,
+          name,
+          email,
+          phone,
+          isLoggedIn: true,
+          createdAt: Date.now(),
+        },
+      })),
+
+      logout: () => set((state) => ({
+        profile: {
+          ...state.profile,
+          id: '',
+          name: 'Driver',
+          email: '',
+          phone: '',
+          isLoggedIn: false,
+          vehicles: [],
+        },
       })),
     }),
     {

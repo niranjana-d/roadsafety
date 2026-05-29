@@ -22,7 +22,7 @@ interface LocationState {
 const defaultLocation: UserLocation = {
   country: APP_CONFIG.defaultLocation.country,
   stateCode: APP_CONFIG.defaultLocation.stateCode,
-  stateName: 'Maharashtra',
+  stateName: 'Tamil Nadu',
   city: APP_CONFIG.defaultLocation.city,
   isAutoDetected: false,
   lastUpdated: Date.now(),

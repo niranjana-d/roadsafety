@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { ThemeContext } from './_layout';
 import { useSettingsStore } from '../src/store/settingsStore';
 import { useLocationStore } from '../src/store/locationStore';
+import { useUserStore } from '../src/store/userStore';
 import { INDIAN_STATES, CITIES_BY_STATE, searchStates } from '../src/constants/states';
 import { APP_CONFIG } from '../src/constants/config';
 import { spacing, borderRadius, typography } from '../src/constants/theme';
@@ -44,6 +45,7 @@ export default function OnboardingScreen() {
   const { colors } = useContext(ThemeContext);
   const { completeOnboarding, setLanguage } = useSettingsStore();
   const { setCurrentLocation } = useLocationStore();
+  const { profile } = useUserStore();
 
   const [step, setStep] = useState<Step>('carousel');
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -86,12 +88,20 @@ export default function OnboardingScreen() {
       });
     }
     completeOnboarding();
-    router.replace('/(tabs)');
+    if (profile.isLoggedIn) {
+      router.replace('/(tabs)');
+    } else {
+      router.replace('/login');
+    }
   }
 
   function handleSkip() {
     completeOnboarding();
-    router.replace('/(tabs)');
+    if (profile.isLoggedIn) {
+      router.replace('/(tabs)');
+    } else {
+      router.replace('/login');
+    }
   }
 
   // ─── Carousel Step ─────────────────────────────────────────
@@ -233,28 +243,22 @@ export default function OnboardingScreen() {
           value={stateSearch}
           onChangeText={setStateSearch}
         />
-        <ScrollView style={styles.stateList} nestedScrollEnabled>
+        <View style={styles.stateGrid}>
           {filteredStates.map((s) => (
             <TouchableOpacity
               key={s.code}
               style={[
-                styles.stateItem,
-                { borderColor: selectedState === s.code ? colors.primary : colors.border, backgroundColor: selectedState === s.code ? colors.primaryLight : 'transparent' },
+                styles.stateChip,
+                { borderColor: selectedState === s.code ? colors.primary : colors.borderStrong, backgroundColor: selectedState === s.code ? colors.primaryLight : colors.surface },
               ]}
               onPress={() => { setSelectedState(s.code); setSelectedCity(''); setStateSearch(''); }}
             >
-              <Text style={[styles.stateName, { color: selectedState === s.code ? colors.primary : colors.text }]}>
+              <Text style={[styles.stateChipText, { color: selectedState === s.code ? colors.primary : colors.text }]}>
                 {s.name}
               </Text>
-              <Text style={[styles.stateCode, { color: colors.textTertiary }]}>{s.code}</Text>
-              {s.isUT && (
-                <View style={[styles.utBadge, { backgroundColor: colors.warningLight }]}>
-                  <Text style={[styles.utBadgeText, { color: colors.warning }]}>UT</Text>
-                </View>
-              )}
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
       </View>
 
       {/* City */}
@@ -329,10 +333,22 @@ const styles = StyleSheet.create({
   selectBox: { borderWidth: 1, borderRadius: 8, padding: 12 },
   selectText: { fontSize: 15 },
   searchInput: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 15, marginBottom: 8 },
-  stateList: { maxHeight: 200 },
-  stateItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: 1, borderRadius: 8, marginBottom: 4, gap: 8 },
-  stateName: { flex: 1, fontSize: 14, fontWeight: '500' },
-  stateCode: { fontSize: 12 },
+  stateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 8,
+  },
+  stateChip: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  stateChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
   utBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   utBadgeText: { fontSize: 10, fontWeight: '600' },
   cityScroll: { maxHeight: 44 },

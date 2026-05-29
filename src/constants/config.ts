@@ -2,6 +2,14 @@
  * App-wide configuration
  */
 
+declare const process: {
+  env: {
+    EXPO_PUBLIC_API_URL?: string;
+    EXPO_PUBLIC_USE_MOCKS?: string;
+    [key: string]: string | undefined;
+  };
+};
+
 export const APP_CONFIG = {
   name: 'DriveLegal',
   tagline: 'Know Your Road Laws',
@@ -48,27 +56,50 @@ export const APP_CONFIG = {
     { code: 'IN', name: 'India', nameLocal: 'भारत', currency: '₹', currencyCode: 'INR', terminology: { challan: 'Challan', fine: 'Fine' } },
     { code: 'US', name: 'United States', nameLocal: 'United States', currency: '$', currencyCode: 'USD', terminology: { challan: 'Ticket', fine: 'Fine' } },
     { code: 'GB', name: 'United Kingdom', nameLocal: 'United Kingdom', currency: '£', currencyCode: 'GBP', terminology: { challan: 'Fixed Penalty Notice', fine: 'Fine' } },
+    { code: 'CA', name: 'Canada', nameLocal: 'Canada', currency: '$', currencyCode: 'CAD', terminology: { challan: 'Ticket', fine: 'Fine' } },
+    { code: 'AU', name: 'Australia', nameLocal: 'Australia', currency: '$', currencyCode: 'AUD', terminology: { challan: 'Fine Notice', fine: 'Fine' } },
+    { code: 'DE', name: 'Germany', nameLocal: 'Deutschland', currency: '€', currencyCode: 'EUR', terminology: { challan: 'Bußgeldbescheid', fine: 'Geldbuße' } },
+    { code: 'FR', name: 'France', nameLocal: 'France', currency: '€', currencyCode: 'EUR', terminology: { challan: 'Amende', fine: 'Amende' } },
+    { code: 'AE', name: 'United Arab Emirates', nameLocal: 'الإمارات', currency: 'د.إ', currencyCode: 'AED', terminology: { challan: 'Ticket', fine: 'Fine' } },
+    { code: 'SG', name: 'Singapore', nameLocal: 'Singapore', currency: '$', currencyCode: 'SGD', terminology: { challan: 'Traffic Ticket', fine: 'Fine' } },
+    { code: 'JP', name: 'Japan', nameLocal: '日本', currency: '¥', currencyCode: 'JPY', terminology: { challan: '反則金', fine: '罰金' } },
   ],
 
   // Supported languages
   languages: [
     { code: 'en', name: 'English', nameLocal: 'English', rtl: false },
     { code: 'hi', name: 'Hindi', nameLocal: 'हिन्दी', rtl: false },
+    { code: 'ta', name: 'Tamil', nameLocal: 'தமிழ்', rtl: false },
+    { code: 'te', name: 'Telugu', nameLocal: 'తెలుగు', rtl: false },
+    { code: 'ml', name: 'Malayalam', nameLocal: 'മലയാളം', rtl: false },
   ],
 
   // Default location
   defaultLocation: {
     country: 'IN',
-    stateCode: 'MH',
-    city: 'Mumbai',
+    stateCode: 'TN',
+    city: 'Chennai',
   },
 
-  // Government payment portals by state
+  // Government payment portals by state and country
   paymentPortals: {
     MH: 'https://mahatrafficechallan.gov.in/',
     DL: 'https://delhitrafficpolice.nic.in/e-challan/',
     KA: 'https://ksp.karnataka.gov.in/',
     TN: 'https://tnpolice.gov.in/',
+    UP: 'https://traffic.up.nic.in/',
+    GJ: 'https://paychallan.gujarattrafficpolice.in/',
+    KL: 'https://keralapolice.gov.in/page/e-challan',
+    WB: 'https://kolkatatrafficpolice.gov.in/',
+    US: 'https://www.govpaynow.com/',
+    GB: 'https://www.gov.uk/pay-challenge-penalty-charge-notice',
+    CA: 'https://www.ontario.ca/page/pay-ticket-or-fine',
+    AU: 'https://www.revenue.nsw.gov.au/fines-and-fees/pay',
+    DE: 'https://www.bussgeldkatalog.org/',
+    FR: 'https://www.amendes.gouv.fr/',
+    AE: 'https://www.dubaipolice.gov.ae/',
+    SG: 'https://www.police.gov.sg/Advisories/Traffic/Pay-Fines',
+    JP: 'https://www.police.pref.kanagawa.jp/',
     national: 'https://echallan.parivahan.gov.in/',
   } as Record<string, string>,
 

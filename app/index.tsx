@@ -5,12 +5,14 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSettingsStore } from '../src/store/settingsStore';
+import { useUserStore } from '../src/store/userStore';
 import { useContext } from 'react';
 import { ThemeContext } from './_layout';
 
 export default function SplashScreen() {
   const router = useRouter();
   const { hasCompletedOnboarding } = useSettingsStore();
+  const { profile } = useUserStore();
   const { colors } = useContext(ThemeContext);
 
   const logoScale = useRef(new Animated.Value(0.3)).current;
@@ -42,15 +44,17 @@ export default function SplashScreen() {
 
     // Navigate after splash
     const timer = setTimeout(() => {
-      if (hasCompletedOnboarding) {
-        router.replace('/(tabs)');
-      } else {
+      if (!hasCompletedOnboarding) {
         router.replace('/onboarding');
+      } else if (!profile.isLoggedIn) {
+        router.replace('/login');
+      } else {
+        router.replace('/(tabs)');
       }
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [hasCompletedOnboarding]);
+  }, [hasCompletedOnboarding, profile.isLoggedIn]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.primary }]}>

@@ -1,6 +1,3 @@
-/**
- * AI Chatbot Screen
- */
 import React, { useState, useRef, useContext, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput,
@@ -10,14 +7,19 @@ import { ThemeContext } from '../_layout';
 import { useChatStore } from '../../src/store/chatStore';
 import { useLocationStore } from '../../src/store/locationStore';
 import { useOfflineStore } from '../../src/store/offlineStore';
+import { useSettingsStore } from '../../src/store/settingsStore';
+import i18n, { t } from '../../src/localization/i18n';
+import { checkPendingChallans } from '../../src/services/challanService';
 import { getMockChatResponse, SUGGESTED_QUESTIONS } from '../../src/services/mock/chatMock';
 import type { ChatMessage } from '../../src/types/chat';
 import { spacing, borderRadius } from '../../src/constants/theme';
+import LocationSelectorModal from '../../src/components/LocationSelectorModal';
 
 export default function ChatScreen() {
   const { colors } = useContext(ThemeContext);
   const { currentLocation } = useLocationStore();
   const { isOnline } = useOfflineStore();
+  const { settings } = useSettingsStore();
   const {
     currentSession, addMessage, setTyping, isTyping,
     startNewSession, updateMessageFeedback, queueOfflineMessage,
@@ -25,24 +27,26 @@ export default function ChatScreen() {
 
   const [inputText, setInputText] = useState('');
   const scrollRef = useRef<ScrollView>(null);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
 
-  // Start new session if none exists
+  // Sync translation locale
+  i18n.locale = settings.language;
+
+  // Start new session when location changes
   useEffect(() => {
-    if (!currentSession) {
-      startNewSession(
-        { stateCode: currentLocation.stateCode, stateName: currentLocation.stateName, city: currentLocation.city },
-        'en'
-      );
-      // Add welcome message
-      addMessage({
-        id: `msg-welcome-${Date.now()}`,
-        role: 'assistant',
-        content: `Hi! I'm your DriveLegal AI assistant. I can answer questions about traffic laws, fines, and violations specific to your location in ${currentLocation.city}, ${currentLocation.stateName}.\n\nWhat would you like to know?`,
-        timestamp: Date.now(),
-        citations: [],
-      });
-    }
-  }, []);
+    startNewSession(
+      { stateCode: currentLocation.stateCode, stateName: currentLocation.stateName, city: currentLocation.city },
+      settings.language
+    );
+    // Add welcome message
+    addMessage({
+      id: `msg-welcome-${Date.now()}`,
+      role: 'assistant',
+      content: `${t('chat.welcome')}\n\n${t('chat.whatToKnow')}`,
+      timestamp: Date.now(),
+      citations: [],
+    });
+  }, [currentLocation.stateCode, currentLocation.city]);
 
   async function handleSend(text?: string) {
     const messageText = text || inputText.trim();
@@ -79,17 +83,65 @@ export default function ChatScreen() {
     setTyping(true);
 
     try {
-      const response = await getMockChatResponse(messageText, currentLocation.stateCode);
+      // Regex pattern to extract vehicle plate number (e.g. TN-01-AB-1234 or TN01AB1234)
+      const plateRegex = /\b([A-Z]{2}[-]? [0-9]{2}[-]? [A-Z]{1,2}[-]? [0-9]{4}|[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4})\b/i;
+      const cleanPlateRegex = /[ -]/g;
+      const match = messageText.match(plateRegex);
 
-      setTyping(false);
-      addMessage({
-        id: `msg-ai-${Date.now()}`,
-        role: 'assistant',
-        content: response.answer,
-        timestamp: Date.now(),
-        citations: response.citations,
-      });
-    } catch {
+      if (match) {
+        const detectedPlate = match[1].toUpperCase().replace(cleanPlateRegex, '').trim();
+        const pendingChallans = await checkPendingChallans(detectedPlate);
+        
+        setTyping(false);
+        if (pendingChallans.length === 0) {
+          addMessage({
+            id: `msg-ai-${Date.now()}`,
+            role: 'assistant',
+            content: `I have queried the Parivahan E-Challan database in real-time for vehicle number **${detectedPlate}**.\n\n✅ **No pending challans found.** You have a clean driving record for this vehicle! Keep up the safe driving.`,
+            timestamp: Date.now(),
+            citations: [],
+          });
+        } else {
+          // Format detailed explanations of the challans
+          let explanation = `I queried the Parivahan E-Challan database in real-time and found **${pendingChallans.length} pending challan(s)** for vehicle number **${detectedPlate}**:\n\n`;
+          
+          pendingChallans.forEach((ch, idx) => {
+            explanation += `### Challan #${idx + 1}: ${ch.challanNumber}\n`;
+            explanation += `- **Why issued**: ${ch.violationName} at ${ch.location}.\n`;
+            explanation += `- **Applicable Law**: ${ch.act} Section ${ch.section}.\n`;
+            explanation += `- **Fine Amount**: ₹${ch.amount.toLocaleString('en-IN')}.\n`;
+            explanation += `- **Payment Deadline**: ${new Date(ch.deadlineAt).toLocaleDateString()} (deadline to avoid court summoning).\n`;
+            explanation += `- **Consequences**: ${ch.consequences}\n\n`;
+          });
+          
+          explanation += `You can clear these fines directly via the official online portal for your state. Let me know if you need links to pay them!`;
+
+          addMessage({
+            id: `msg-ai-${Date.now()}`,
+            role: 'assistant',
+            content: explanation,
+            timestamp: Date.now(),
+            citations: pendingChallans.map(ch => ({
+              id: ch.id,
+              act: ch.act,
+              section: ch.section,
+              title: ch.violationName,
+            })),
+          });
+        }
+      } else {
+        const response = await getMockChatResponse(messageText, currentLocation.stateCode);
+
+        setTyping(false);
+        addMessage({
+          id: `msg-ai-${Date.now()}`,
+          role: 'assistant',
+          content: response.answer,
+          timestamp: Date.now(),
+          citations: response.citations,
+        });
+      }
+    } catch (e) {
       setTyping(false);
       addMessage({
         id: `msg-error-${Date.now()}`,
@@ -123,23 +175,28 @@ export default function ChatScreen() {
             <Text style={styles.aiAvatarText}>🤖</Text>
           </View>
           <View>
-            <Text style={[styles.topBarTitle, { color: colors.text }]}>DriveLegal AI</Text>
+            <Text style={[styles.topBarTitle, { color: colors.text }]}>{t('chat.title')}</Text>
             <Text style={[styles.topBarStatus, { color: isOnline ? colors.accent : colors.warning }]}>
-              {isOnline ? '● Online' : '● Offline'}
+              {isOnline ? `● ${t('common.online')}` : `● ${t('common.offline')}`}
             </Text>
           </View>
         </View>
-        <View style={[styles.locationChip, { backgroundColor: colors.primaryLight }]}>
+        <TouchableOpacity
+          style={[styles.locationChip, { backgroundColor: colors.primaryLight }]}
+          onPress={() => setLocationModalVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Change location"
+        >
           <Text style={[styles.locationChipText, { color: colors.primary }]}>
-            📍 {currentLocation.city}, {currentLocation.stateCode}
+            📍 {currentLocation.city || 'Select'}, {currentLocation.stateCode || currentLocation.country || 'IN'} · Change
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Context Banner */}
       <View style={[styles.contextBanner, { backgroundColor: colors.primaryLight }]}>
         <Text style={[styles.contextText, { color: colors.primary }]}>
-          📍 Answering for {currentLocation.city}, {currentLocation.stateName} — Motor Vehicles Act 2019
+          📍 {t('chat.contextLabel')} {currentLocation.city}, {currentLocation.stateName} — Motor Vehicles Act 2019
         </Text>
       </View>
 
@@ -147,7 +204,7 @@ export default function ChatScreen() {
       {!isOnline && (
         <View style={[styles.offlineBanner, { backgroundColor: colors.warningLight }]}>
           <Text style={[styles.offlineText, { color: colors.warning }]}>
-            ⚡ Offline Mode — Showing cached answers
+            ⚡ {t('chat.offlineMode')}
           </Text>
         </View>
       )}
@@ -264,7 +321,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
         <TextInput
           style={[styles.textInput, { borderColor: colors.borderStrong, color: colors.text, backgroundColor: colors.surface }]}
-          placeholder="Ask about a traffic law..."
+          placeholder={t('chat.placeholder')}
           placeholderTextColor={colors.textTertiary}
           value={inputText}
           onChangeText={setInputText}
@@ -280,6 +337,11 @@ export default function ChatScreen() {
           <Text style={{ fontSize: 16, color: '#FFF' }}>➤</Text>
         </TouchableOpacity>
       </View>
+
+      <LocationSelectorModal
+        visible={locationModalVisible}
+        onClose={() => setLocationModalVisible(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -317,7 +379,7 @@ const styles = StyleSheet.create({
   suggestionsRow: { maxHeight: 44, minHeight: 44 },
   suggestionsContent: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
   suggChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
-  suggText: { fontSize: 13, whiteSpace: 'nowrap' },
+  suggText: { fontSize: 13 },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1 },
   micBtn: { width: 42, height: 42, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   textInput: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14.5, minHeight: 42, maxHeight: 100 },

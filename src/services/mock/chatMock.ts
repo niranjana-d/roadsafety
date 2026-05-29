@@ -42,7 +42,7 @@ const MOCK_RESPONSES: Record<string, { answer: string; citations: Citation[] }> 
   },
 };
 
-const DEFAULT_RESPONSE = {
+const DEFAULT_RESPONSE: { answer: string; citations: Citation[] } = {
   answer: "That's a great question about traffic law! Based on the Motor Vehicles (Amendment) Act, 2019 applicable in your selected state, I can help you with specific fine amounts and legal sections. Could you be more specific about the violation type or location?",
   citations: [{ id: 'c0', section: 'General', act: 'MVA 2019', title: 'Motor Vehicles Act', lawId: '' }],
 };
