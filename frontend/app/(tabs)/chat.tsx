@@ -14,6 +14,7 @@ import { getMockChatResponse, SUGGESTED_QUESTIONS } from '../../src/services/moc
 import type { ChatMessage } from '../../src/types/chat';
 import { spacing, borderRadius } from '../../src/constants/theme';
 import LocationSelectorModal from '../../src/components/LocationSelectorModal';
+import { APP_CONFIG } from '../../src/constants/config';
 
 export default function ChatScreen() {
   const { colors } = useContext(ThemeContext);
@@ -130,7 +131,28 @@ export default function ChatScreen() {
           });
         }
       } else {
-        const response = await getMockChatResponse(messageText, currentLocation.stateCode);
+        let response;
+        try {
+          const apiRes = await fetch(`${APP_CONFIG.api.baseUrl}/api/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: messageText,
+              state_code: currentLocation.stateCode,
+              language: settings.language,
+            }),
+          });
+          if (apiRes.ok) {
+            response = await apiRes.json();
+          } else {
+            throw new Error("Backend chat API returned error status");
+          }
+        } catch (err) {
+          console.warn("Failed to get chat response from backend, using mock fallback:", err);
+          response = await getMockChatResponse(messageText, currentLocation.stateCode);
+        }
 
         setTyping(false);
         addMessage({

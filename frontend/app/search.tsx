@@ -8,26 +8,65 @@ import { ThemeContext } from './_layout';
 import { MOCK_LAWS } from '../src/services/mock/lawsMock';
 import { VIOLATIONS } from '../src/constants/violations';
 import { rankByRelevance, highlightMatch } from '../src/utils/searchUtils';
+import { useLocationStore } from '../src/store/locationStore';
+import { APP_CONFIG } from '../src/constants/config';
 
 export default function SearchScreen() {
   const router = useRouter();
   const { colors } = useContext(ThemeContext);
+  const { currentLocation } = useLocationStore();
   const [query, setQuery] = useState('');
+  const [laws, setLaws] = useState<any[]>([]);
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     // Auto focus search input on mount
     setTimeout(() => inputRef.current?.focus(), 100);
-  }, []);
+    
+    // Fetch rules from database to perform search
+    async function loadRulesForSearch() {
+      try {
+        const response = await fetch(`${APP_CONFIG.api.baseUrl}/api/rules?state=${currentLocation.stateCode}`);
+        if (response.ok) {
+          const rules = await response.json();
+          const mapped = rules.map((rule: any) => {
+            let cat = 'safety';
+            if (rule.violation_id.includes('speed')) cat = 'speed';
+            else if (rule.violation_id.includes('park')) cat = 'parking';
+            else if (rule.violation_id.includes('insur')) cat = 'insurance';
+            else if (rule.violation_id.includes('licence')) cat = 'licensing';
+            else if (rule.violation_id.includes('puc') || rule.violation_id.includes('regist')) cat = 'documents';
+            else if (rule.violation_id.includes('dui')) cat = 'dui';
+            
+            return {
+              id: rule.violation_id,
+              title: rule.title,
+              summary: rule.description,
+              section: rule.section,
+              act: 'MVA 2019',
+              category: cat,
+            };
+          });
+          setLaws(mapped);
+        } else {
+          setLaws(MOCK_LAWS);
+        }
+      } catch (err) {
+        setLaws(MOCK_LAWS);
+      }
+    }
+    loadRulesForSearch();
+  }, [currentLocation.stateCode]);
 
   const results = useMemo(() => {
     if (!query.trim()) return { laws: [], violations: [] };
     
-    const laws = rankByRelevance(MOCK_LAWS, query, l => `${l.title} ${l.summary} ${l.section} ${l.act}`);
-    const violations = rankByRelevance(VIOLATIONS, query, v => `${v.name} ${v.description} ${v.nameHi}`);
+    const lawsList = laws.length > 0 ? laws : MOCK_LAWS;
+    const matchedLaws = rankByRelevance(lawsList, query, l => `${l.title} ${l.summary} ${l.section} ${l.act}`);
+    const matchedViolations = rankByRelevance(VIOLATIONS, query, v => `${v.name} ${v.description} ${v.nameHi}`);
     
-    return { laws: laws.slice(0, 5), violations: violations.slice(0, 5) };
-  }, [query]);
+    return { laws: matchedLaws.slice(0, 5), violations: matchedViolations.slice(0, 5) };
+  }, [query, laws]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

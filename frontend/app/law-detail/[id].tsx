@@ -11,6 +11,8 @@ import { VIOLATION_BY_ID, getFineData } from '../../src/constants/violations';
 import { formatINR } from '../../src/utils/formatCurrency';
 import { formatDate } from '../../src/utils/formatDate';
 import type { Law } from '../../src/types/law';
+import { useLocationStore } from '../../src/store/locationStore';
+import { APP_CONFIG } from '../../src/constants/config';
 
 type DetailTab = 'simplified' | 'official' | 'fines' | 'amendments';
 
@@ -19,15 +21,62 @@ export default function LawDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useContext(ThemeContext);
   const { addBookmark, removeBookmark, isBookmarked } = useBookmarkStore();
+  const { currentLocation } = useLocationStore();
 
   const [law, setLaw] = useState<Law | null>(null);
   const [tab, setTab] = useState<DetailTab>('simplified');
 
   useEffect(() => {
-    if (id) {
+    async function fetchLawDetail() {
+      if (!id) return;
+      try {
+        const response = await fetch(`${APP_CONFIG.api.baseUrl}/api/rules?state=${currentLocation.stateCode}`);
+        if (response.ok) {
+          const rules = await response.json();
+          const targetRule = rules.find((r: any) => r.violation_id === id);
+          if (targetRule) {
+            let cat = 'safety';
+            if (targetRule.violation_id.includes('speed')) cat = 'speed';
+            else if (targetRule.violation_id.includes('park')) cat = 'parking';
+            else if (targetRule.violation_id.includes('insur')) cat = 'insurance';
+            else if (targetRule.violation_id.includes('licence')) cat = 'licensing';
+            else if (targetRule.violation_id.includes('puc') || targetRule.violation_id.includes('regist')) cat = 'documents';
+            else if (targetRule.violation_id.includes('dui')) cat = 'dui';
+            
+            const sev = (targetRule.base_fine >= 10000) ? 'criminal' : (targetRule.base_fine >= 5000) ? 'major' : (targetRule.base_fine >= 1000) ? 'moderate' : 'minor';
+            
+            setLaw({
+              id: targetRule.violation_id,
+              title: targetRule.title,
+              titleHi: targetRule.title,
+              summary: targetRule.description,
+              summaryHi: targetRule.description,
+              officialText: `Section ${targetRule.section} of the Motor Vehicles Act — Punishable with compounding fee of ₹${targetRule.compounding_fee}. Notes: ${targetRule.state_specific_notes}`,
+              simplifiedExplanation: targetRule.description,
+              category: cat as any,
+              severity: sev as any,
+              section: targetRule.section,
+              act: 'MVA 2019',
+              fineRange: `₹${targetRule.base_fine.toLocaleString('en-IN')}${targetRule.max_fine ? ' - ₹' + targetRule.max_fine.toLocaleString('en-IN') : ''}`,
+              applicableVehicles: ['car', '2w', 'auto', 'commercial', 'heavy'],
+              applicableStates: [currentLocation.stateCode],
+              amendments: [],
+              relatedViolationIds: [targetRule.violation_id],
+              lastUpdated: new Date().toISOString().split('T')[0],
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch law detail from backend, falling back to mock:", err);
+      }
+      
+      // Fallback
       getMockLawById(id).then(l => l && setLaw(l));
     }
-  }, [id]);
+
+    fetchLawDetail();
+  }, [id, currentLocation.stateCode]);
 
   if (!law) {
     return (

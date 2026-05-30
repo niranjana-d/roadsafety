@@ -2,6 +2,7 @@
  * Mock Chat Service — returns realistic AI responses based on keyword matching
  */
 import type { ChatMessage, Citation, SuggestedQuestion } from '../../types/chat';
+import { STATE_BY_CODE } from '../../constants/states';
 
 const MOCK_RESPONSES: Record<string, { answer: string; citations: Citation[] }> = {
   speed: {
@@ -59,24 +60,61 @@ export function getMockChatResponse(
     const delay = 800 + Math.random() * 1200;
     setTimeout(() => {
       const q = query.toLowerCase();
-      let response = DEFAULT_RESPONSE;
+      const codeUpper = stateCode.toUpperCase();
+      const stateObj = STATE_BY_CODE[codeUpper] || { name: 'Maharashtra', code: 'MH', capital: 'Mumbai' };
 
+      // 1. Intercept location query
+      const isLocationQuery = ["current location", "where am i", "my location", "which city", "what city"].some(kw => q.includes(kw));
+      const isViolationQuery = ["speed", "helmet", "signal", "seatbelt", "drunk", "drink", "alcohol", "dui", "phone", "mobile", "park", "insur", "licence", "license", "puc", "pollution", "overload", "danger", "rash", "wrong side", "registr", "horn", "honk"].some(kw => q.includes(kw));
+
+      if (isLocationQuery && !isViolationQuery) {
+        const answer = `Your active location context is set to **${stateObj.name} (${stateObj.code})**. All calculations, laws, and citations will be filtered for this state. You can update this context at any time using the location selector in the top bar.`;
+        const citations: Citation[] = [{
+          id: 'cite-location',
+          section: 'Location Settings',
+          act: 'DriveLegal Configuration',
+          title: 'State Context',
+          lawId: ''
+        }];
+        resolve({ answer, citations });
+        return;
+      }
+
+      // 2. Intercept active challan query
+      if (["active challan", "pending fine", "my challan", "challan to pay", "fines to pay", "any challan"].some(kw => q.includes(kw))) {
+        const answer = `Please enter your vehicle registration number (e.g., MH12AB1234 or TN01AB1234) in the chat, and I will query the Parivahan E-Challan database in real-time for any pending fines.`;
+        resolve({ answer, citations: [] });
+        return;
+      }
+
+      // 3. Normal keyword-based mock matching
+      let response = { ...DEFAULT_RESPONSE };
       const keywords = Object.keys(MOCK_RESPONSES);
       for (const keyword of keywords) {
         if (q.includes(keyword)) {
-          response = MOCK_RESPONSES[keyword];
+          response = { ...MOCK_RESPONSES[keyword] };
           break;
         }
       }
 
       // Additional keyword variations
-      if (q.includes('limit')) response = MOCK_RESPONSES.speed;
-      else if (q.includes('drunk') || q.includes('alcohol')) response = MOCK_RESPONSES.dui;
-      else if (q.includes('licence') || q.includes('license') || q.includes('carry')) response = MOCK_RESPONSES.document;
-      else if (q.includes('phone') || q.includes('call')) response = MOCK_RESPONSES.mobile;
-      else if (q.includes('park')) response = MOCK_RESPONSES.parking;
-      else if (q.includes('belt')) response = MOCK_RESPONSES.seatbelt;
-      else if (q.includes('red light') || q.includes('traffic light')) response = MOCK_RESPONSES.signal;
+      if (q.includes('limit')) response = { ...MOCK_RESPONSES.speed };
+      else if (q.includes('drunk') || q.includes('alcohol')) response = { ...MOCK_RESPONSES.dui };
+      else if (q.includes('licence') || q.includes('license') || q.includes('carry')) response = { ...MOCK_RESPONSES.document };
+      else if (q.includes('phone') || q.includes('call')) response = { ...MOCK_RESPONSES.mobile };
+      else if (q.includes('park')) response = { ...MOCK_RESPONSES.parking };
+      else if (q.includes('belt')) response = { ...MOCK_RESPONSES.seatbelt };
+      else if (q.includes('red light') || q.includes('traffic light')) response = { ...MOCK_RESPONSES.signal };
+
+      // 4. Dynamically replace Maharashtra and Mumbai/Pune with the user's active state details
+      if (response.answer !== DEFAULT_RESPONSE.answer) {
+        const stateName = stateObj.name;
+        const cityName = stateObj.capital || 'Mumbai';
+        response.answer = response.answer
+          .replace(/Maharashtra/g, stateName)
+          .replace(/Mumbai/g, cityName)
+          .replace(/Pune/g, cityName);
+      }
 
       resolve(response);
     }, delay);

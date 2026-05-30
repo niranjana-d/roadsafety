@@ -41,6 +41,63 @@ export default function LawsScreen() {
   const [selectedSeverity, setSelectedSeverity] = useState<typeof SEVERITY_FILTERS[number]>('All');
   const [locationModalVisible, setLocationModalVisible] = useState(false);
 
+  // Dynamic laws state from database
+  const [laws, setLaws] = useState<Law[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    async function fetchLaws() {
+      setLoading(true);
+      try {
+        const response = await fetch(`${APP_CONFIG.api.baseUrl}/api/rules?state=${currentLocation.stateCode}`);
+        if (response.ok) {
+          const rules = await response.json();
+          const mapped = rules.map((rule: any) => {
+            let cat = 'safety';
+            if (rule.violation_id.includes('speed')) cat = 'speed';
+            else if (rule.violation_id.includes('park')) cat = 'parking';
+            else if (rule.violation_id.includes('insur')) cat = 'insurance';
+            else if (rule.violation_id.includes('licence')) cat = 'licensing';
+            else if (rule.violation_id.includes('puc') || rule.violation_id.includes('regist')) cat = 'documents';
+            else if (rule.violation_id.includes('dui')) cat = 'dui';
+            
+            const sev = (rule.base_fine >= 10000) ? 'criminal' : (rule.base_fine >= 5000) ? 'major' : (rule.base_fine >= 1000) ? 'moderate' : 'minor';
+            
+            return {
+              id: rule.violation_id,
+              title: rule.title,
+              titleHi: rule.title,
+              summary: rule.description,
+              summaryHi: rule.description,
+              officialText: `Section ${rule.section} of the Motor Vehicles Act — Punishable with compounding fee of ₹${rule.compounding_fee}. Notes: ${rule.state_specific_notes}`,
+              simplifiedExplanation: rule.description,
+              category: cat,
+              severity: sev,
+              section: rule.section,
+              act: 'MVA 2019',
+              fineRange: `₹${rule.base_fine.toLocaleString('en-IN')}${rule.max_fine ? ' - ₹' + rule.max_fine.toLocaleString('en-IN') : ''}`,
+              applicableVehicles: ['car', '2w', 'auto', 'commercial', 'heavy'],
+              applicableStates: [currentLocation.stateCode],
+              amendments: [],
+              relatedViolationIds: [rule.violation_id],
+              lastUpdated: new Date().toISOString().split('T')[0],
+            };
+          });
+          setLaws(mapped);
+        } else {
+          setLaws(MOCK_LAWS);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch laws from backend, using mock fallback:", err);
+        setLaws(MOCK_LAWS);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchLaws();
+  }, [currentLocation.stateCode]);
+
   // Filter popup states
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState('IN');
@@ -56,7 +113,7 @@ export default function LawsScreen() {
   const [stateSearch, setStateSearch] = useState('');
 
   const filteredLaws = useMemo(() => {
-    let results = [...MOCK_LAWS];
+    let results = [...laws];
 
     // Country/State/City filter logic
     if (selectedCountry === 'IN') {

@@ -2,12 +2,19 @@
  * App-wide configuration
  */
 
-declare const process: {
-  env: {
-    EXPO_PUBLIC_API_URL?: string;
-    EXPO_PUBLIC_USE_MOCKS?: string;
-    [key: string]: string | undefined;
-  };
+// Safe retrieval of API URL
+const getApiUrl = (): string => {
+  try {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process && process.env) {
+      // @ts-ignore
+      const envUrl = process.env.EXPO_PUBLIC_API_URL;
+      if (envUrl) return envUrl;
+    }
+  } catch (e) {
+    // Ignore any reference errors
+  }
+  return 'http://10.124.244.107:8000';
 };
 
 export const APP_CONFIG = {
@@ -18,7 +25,7 @@ export const APP_CONFIG = {
 
   // API configuration
   api: {
-    baseUrl: process.env.EXPO_PUBLIC_API_URL || 'https://api.drivelegal.app',
+    baseUrl: getApiUrl(),
     version: 'v1',
     timeout: 15000, // 15 seconds
     retryAttempts: 3,
@@ -27,7 +34,7 @@ export const APP_CONFIG = {
 
   // Feature flags
   features: {
-    useMocks: process.env.EXPO_PUBLIC_USE_MOCKS !== 'false', // default to mocks
+    useMocks: false, // Integrate with real backend
     enableVoiceInput: false, // coming soon
     enableMapIntegration: false, // coming soon
     enablePaymentLinks: true,

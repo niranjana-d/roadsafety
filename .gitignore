@@ -1,0 +1,12 @@
+# Python compiled bytecode
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# SQLite Database (generated on startup or via seed_data.py)
+**/drivelegal.db
+
+# OS files
+.DS_Store
+Thumbs.db

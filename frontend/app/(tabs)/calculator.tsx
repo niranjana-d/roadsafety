@@ -36,7 +36,7 @@ export default function CalculatorScreen() {
     store.setState(currentLocation.stateCode || currentLocation.country);
   }, [currentLocation.stateCode, currentLocation.country]);
 
-  function handleCalculate() {
+  async function handleCalculate() {
     if (!store.selectedViolation) {
       Alert.alert('Required', 'Please select a violation type.');
       return;
@@ -45,13 +45,58 @@ export default function CalculatorScreen() {
     const violation = VIOLATION_BY_ID[store.selectedViolation];
     if (!violation) return;
 
+    const vehicleName = customVehicle.trim() ? customVehicle.trim() : (VEHICLE_BY_ID[store.selectedVehicle]?.name || store.selectedVehicle);
+
+    // Call backend API for calculation first
+    try {
+      const response = await fetch(`${APP_CONFIG.api.baseUrl}/api/calculate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          violation_id: store.selectedViolation,
+          vehicle_type_id: store.selectedVehicle,
+          state_code: store.selectedState,
+          offense_number: store.isRepeatOffence ? 2 : 1,
+          city_name: currentLocation.city || null,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const result: FineCalculation = {
+          id: data.calculation_id,
+          violationId: data.violation_id,
+          violationName: data.violation_name,
+          vehicleType: vehicleName,
+          stateCode: data.state_code,
+          stateName: data.state_name,
+          isRepeat: data.is_repeat,
+          baseFine: data.base_fine,
+          surcharge: data.surcharge,
+          compoundingFee: data.compounding_fee,
+          totalFine: data.total_fine,
+          licencePoints: data.licence_points,
+          imprisonment: data.imprisonment,
+          section: data.section,
+          act: data.act,
+          calculatedAt: data.calculated_at || Date.now(),
+        };
+        store.setResult(result);
+        setShowComparison(false);
+        return;
+      }
+    } catch (err) {
+      console.warn("Failed to calculate fine on backend, using offline fallback:", err);
+    }
+
+    // Local offline calculation fallback
     const fineData = getFineData(store.selectedViolation, store.selectedState);
     if (!fineData) return;
 
     const baseFine = store.isRepeatOffence ? fineData.repeatFine : fineData.baseFine;
     const total = baseFine + fineData.surcharge + fineData.compoundingFee;
-
-    const vehicleName = customVehicle.trim() ? customVehicle.trim() : (VEHICLE_BY_ID[store.selectedVehicle]?.name || store.selectedVehicle);
 
     const result: FineCalculation = {
       id: `calc-${Date.now()}`,

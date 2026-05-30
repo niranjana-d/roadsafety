@@ -4,8 +4,9 @@
 import React, { useState, useContext, useEffect } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
-  TextInput, StyleSheet, Dimensions,
+  TextInput, StyleSheet, Dimensions, Alert,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { ThemeContext } from '../../app/_layout';
 import { useLocationStore } from '../store/locationStore';
 import { INDIAN_STATES, CITIES_BY_STATE, searchStates } from '../constants/states';
@@ -25,6 +26,7 @@ export default function LocationSelectorModal({ visible, onClose }: LocationSele
   const [stateCode, setStateCode] = useState(currentLocation.stateCode);
   const [city, setCity] = useState(currentLocation.city);
   const [stateSearch, setStateSearch] = useState('');
+  const [gpsLoading, setGpsLoading] = useState(false);
 
   // Sync state with current location when modal opens
   useEffect(() => {
@@ -35,6 +37,113 @@ export default function LocationSelectorModal({ visible, onClose }: LocationSele
       setStateSearch('');
     }
   }, [visible, currentLocation]);
+
+  async function handleAutoDetect() {
+    setGpsLoading(true);
+    try {
+      // 1. Check if location services are enabled on the device/emulator
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        Alert.alert(
+          'Location Services Disabled',
+          'Please enable location services (GPS) in your device settings and try again.'
+        );
+        setGpsLoading(false);
+        return;
+      }
+
+      // 2. Request permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please grant location permissions to use GPS auto-detection.');
+        setGpsLoading(false);
+        return;
+      }
+
+      // 3. Get position with fallback to last known position for speed and emulator compatibility
+      let location = await Location.getLastKnownPositionAsync();
+      if (!location) {
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      }
+
+      if (!location) {
+        throw new Error('Location coordinates are currently unavailable.');
+      }
+
+      const { latitude, longitude } = location.coords;
+      const geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
+
+      if (geocode && geocode.length > 0) {
+        const address = geocode[0];
+        const detectedCountry = address.isoCountryCode || 'IN';
+        const detectedRegion = address.region || address.subregion || '';
+        const detectedCity = address.city || address.district || address.subregion || '';
+
+        setCountry(detectedCountry);
+
+        if (detectedCountry === 'IN') {
+          const normalizedRegion = detectedRegion.toLowerCase().trim();
+          let matchedState = INDIAN_STATES.find(s => s.name.toLowerCase() === normalizedRegion);
+          if (!matchedState) {
+            matchedState = INDIAN_STATES.find(s => 
+              normalizedRegion.includes(s.name.toLowerCase()) || 
+              s.name.toLowerCase().includes(normalizedRegion)
+            );
+          }
+          if (!matchedState) {
+            const normalizedCity = detectedCity.toLowerCase().trim();
+            for (const [code, cities] of Object.entries(CITIES_BY_STATE)) {
+              if (cities.some(c => c.toLowerCase() === normalizedCity)) {
+                matchedState = INDIAN_STATES.find(s => s.code === code);
+                break;
+              }
+            }
+          }
+
+          if (matchedState) {
+            setStateCode(matchedState.code);
+            const allowedCities = CITIES_BY_STATE[matchedState.code] || [];
+            const matchedCity = allowedCities.find(c => c.toLowerCase() === detectedCity.toLowerCase()) || allowedCities[0] || matchedState.capital;
+            setCity(matchedCity);
+            
+            setCurrentLocation({
+              country: 'IN',
+              stateCode: matchedState.code,
+              stateName: matchedState.name,
+              city: matchedCity,
+              isAutoDetected: true,
+              lastUpdated: Date.now(),
+            });
+            
+            Alert.alert('Location Detected', `Successfully set location to ${matchedCity}, ${matchedState.name}.`);
+            onClose();
+          } else {
+            Alert.alert('Location Match Failure', `Detected "${detectedRegion}" but could not map it to a supported Indian state. Please select manually.`);
+          }
+        } else {
+          setCurrentLocation({
+            country: detectedCountry,
+            stateCode: '',
+            stateName: detectedRegion || detectedCountry,
+            city: detectedCity || '',
+            isAutoDetected: true,
+            lastUpdated: Date.now(),
+          });
+          Alert.alert('Location Detected', `Detected location context: ${detectedCity ? detectedCity + ', ' : ''}${detectedRegion || detectedCountry}.`);
+          onClose();
+        }
+      } else {
+        Alert.alert('Error', 'Could not retrieve address details for your coordinates.');
+      }
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Error', 'Failed to detect location: ' + e.message);
+    } finally {
+      setGpsLoading(false);
+    }
+  }
 
   const filteredStates = stateSearch ? searchStates(stateSearch) : INDIAN_STATES;
   const cities = country === 'IN' && stateCode ? (CITIES_BY_STATE[stateCode] || []) : [];
@@ -70,6 +179,19 @@ export default function LocationSelectorModal({ visible, onClose }: LocationSele
           </View>
 
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
+            {/* Auto Detect Button */}
+            <TouchableOpacity
+              style={[styles.gpsBtn, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
+              onPress={handleAutoDetect}
+              disabled={gpsLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Auto-detect location using GPS"
+            >
+              <Text style={[styles.gpsBtnText, { color: colors.primary }]}>
+                {gpsLoading ? '📡 Detecting...' : '📡 Auto-Detect Location (GPS)'}
+              </Text>
+            </TouchableOpacity>
+
             {/* Country Selector */}
             <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Select Country</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.countryScroll}>
@@ -322,6 +444,19 @@ const styles = StyleSheet.create({
   saveBtnText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  gpsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  gpsBtnText: {
+    fontSize: 15,
     fontWeight: '600',
   },
 });
